@@ -1,0 +1,41 @@
+import { db } from "@/lib/db";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+
+export default async function ArticleDetailPage({ params }: { params: { slug: string } }) {
+  const article = await db.article.findUnique({
+    where: { slug: params.slug }
+  });
+
+  if (!article || !article.published) {
+    notFound();
+  }
+
+  return (
+    <div className="article-detail">
+      <article className="section">
+        <div className="container" style={{ maxWidth: '800px' }}>
+          <Link href="/articles" style={{ color: 'var(--accent)', marginBottom: '32px', display: 'inline-block' }}>
+            &larr; Kembali ke Daftar Artikel
+          </Link>
+          
+          <span style={{ display: 'block', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+            {new Date(article.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </span>
+          <h1 style={{ fontSize: '3rem', marginBottom: '40px', lineHeight: 1.2 }}>{article.title}</h1>
+          
+          {article.image && (
+            <div style={{ width: '100%', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: '40px' }}>
+              <img src={article.image} alt={article.title} style={{ width: '100%', display: 'block' }} />
+            </div>
+          )}
+
+          <div 
+            style={{ fontSize: '1.1rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}
+            dangerouslySetInnerHTML={{ __html: article.content }}
+          />
+        </div>
+      </article>
+    </div>
+  );
+}
