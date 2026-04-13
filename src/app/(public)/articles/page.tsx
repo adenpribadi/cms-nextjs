@@ -2,23 +2,10 @@ import { db } from "@/lib/db";
 import Link from "next/link";
 
 export default async function ArticlesPage() {
-  let articles = [];
-  try {
-    articles = await db.article.findMany({
-      where: { published: true },
-      orderBy: { createdAt: 'desc' }
-    });
-  } catch (err: any) {
-    console.error("DEBUG: Error fetching articles in ArticlesPage:", err);
-    if (err.code) console.error("DEBUG: Error code:", err.code);
-    if (err.meta) console.error("DEBUG: Error meta:", JSON.stringify(err.meta));
-    // If it fails during build, we might want to return an empty list instead of crashing the whole build
-    // but only if we are in build mode.
-    if (process.env.NODE_ENV === "production" && !process.env.VERCEL_ENV) {
-       // This is likely build time.
-    }
-    throw err; // Still throw to see it in the console, but the logs will have more info.
-  }
+  const articles = await db.article.findMany({
+    where: { published: true },
+    orderBy: { createdAt: 'desc' }
+  });
 
   return (
     <div className="articles-page">

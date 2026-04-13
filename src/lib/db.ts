@@ -7,14 +7,19 @@ function createPrismaClient(): PrismaClient {
 
   // Handle case where env var might be literally the string "undefined"
   if (rawUrl === "undefined") {
-    console.warn("WARNING: DATABASE_URL is literally 'undefined'. Falling back to local dev.db for build.");
     rawUrl = "";
   }
 
   // Fallback for build time if we are on Vercel but URL is missing
   if (!rawUrl && process.env.VERCEL) {
     console.warn("WARNING: DATABASE_URL is missing on Vercel. Falling back to local dev.db for build step.");
-    rawUrl = "file:./dev.db";
+    rawUrl = "file:./prisma/dev.db";
+  }
+
+  // CRITICAL: Explicitly set process.env.DATABASE_URL if it's missing.
+  // Prisma Engine validates this environment variable even when using an adapter.
+  if (!process.env.DATABASE_URL && rawUrl) {
+    process.env.DATABASE_URL = rawUrl;
   }
 
   if (!rawUrl) {
@@ -36,14 +41,19 @@ function createPrismaClient(): PrismaClient {
   const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
   const path = require("path");
 
-  const dbPath = rawUrl.startsWith("file:") ? rawUrl.replace("file:", "") : rawUrl;
-  const absolutePath = path.resolve(process.cwd(), "prisma", dbPath);
+  // For BetterSqlite3, we need the plain filesystem path.
+  const dbPath = rawUrl.replace(/^file:/, "");
+  const absolutePath = path.isAbsolute(dbPath) 
+    ? dbPath 
+    : path.resolve(process.cwd(), dbPath);
 
   console.log("Prisma initializing with absolute path:", absolutePath);
 
-  const adapter = new PrismaBetterSqlite3({ url: `file:${absolutePath}` });
+  // We pass the plain path to the adapter.
+  const adapter = new PrismaBetterSqlite3({ url: absolutePath });
   return new PrismaClient({ adapter });
 }
+
 
 
 export const db = globalForPrisma.prisma ?? createPrismaClient();
