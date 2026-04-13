@@ -3,30 +3,21 @@ import { PrismaClient } from "@/generated/prisma/client";
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
-  // ── FORCED BUILD MOCK ──────────────────────────────────────────────
-  // Detect Vercel Build phase. We bypass the real engine during static generation 
-  // because the build environment often lacks DB access or correct native binaries.
-  const isVercelBuild = process.env.VERCEL === "1" && !process.env.VERCEL_ENV;
+  // ── ROCK-SOLID BUILD MOCK ──────────────────────────────────────────
+  // If we are on Vercel and the DATABASE_URL is either missing or set to the byproduct 
+  // "undefined", we MUST use the Mock Client to avoid a guaranteed engine crash 
+  // during static generation.
+  const isVercel = process.env.VERCEL === "1";
+  const rawUrl = process.env.DATABASE_URL || "";
+  const isInvalidUrl = !rawUrl || rawUrl === "undefined";
   
-  if (isVercelBuild) {
-    console.info("Prisma: Vercel Build Phase detected. Using Safe-Mock Client.");
+  if (isVercel && isInvalidUrl) {
+    console.info("Prisma: Vercel environment with missing/invalid URL detected. Using Safe-Mock Client.");
     return createMockClient();
   }
 
   try {
-    let rawUrl = process.env.DATABASE_URL || "";
-
-    // Handle case where env var might be literally the string "undefined"
-    if (rawUrl === "undefined" || !rawUrl) {
-      // If we are on Vercel at runtime (Preview/Prod) but URL is missing, it's a config error.
-      // But during build, we already handled it above.
-      if (process.env.VERCEL) {
-        console.warn("WARNING: DATABASE_URL is missing or 'undefined' at runtime.");
-        rawUrl = "file:./prisma/dev.db";
-      } else {
-        rawUrl = "";
-      }
-    }
+    let currentUrl = rawUrl;
 
     // Always ensure process.env has a valid string for the engine's internal validation
     if (rawUrl) {
