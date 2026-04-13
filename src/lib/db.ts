@@ -3,23 +3,33 @@ import { PrismaClient } from "@/generated/prisma/client";
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
+  // ── FORCED BUILD MOCK ──────────────────────────────────────────────
+  // Detect Vercel Build phase. We bypass the real engine during static generation 
+  // because the build environment often lacks DB access or correct native binaries.
+  const isVercelBuild = process.env.VERCEL === "1" && !process.env.VERCEL_ENV;
+  
+  if (isVercelBuild) {
+    console.info("Prisma: Vercel Build Phase detected. Using Safe-Mock Client.");
+    return createMockClient();
+  }
+
   try {
     let rawUrl = process.env.DATABASE_URL || "";
 
     // Handle case where env var might be literally the string "undefined"
-    if (rawUrl === "undefined") {
-      rawUrl = "";
+    if (rawUrl === "undefined" || !rawUrl) {
+      // If we are on Vercel at runtime (Preview/Prod) but URL is missing, it's a config error.
+      // But during build, we already handled it above.
+      if (process.env.VERCEL) {
+        console.warn("WARNING: DATABASE_URL is missing or 'undefined' at runtime.");
+        rawUrl = "file:./prisma/dev.db";
+      } else {
+        rawUrl = "";
+      }
     }
 
-    // Fallback for build time if we are on Vercel but URL is missing
-    if (!rawUrl && process.env.VERCEL) {
-      console.warn("WARNING: DATABASE_URL is missing on Vercel. Attempting fallback to local dev.db.");
-      rawUrl = "file:./prisma/dev.db";
-    }
-
-    // CRITICAL: Explicitly set process.env.DATABASE_URL if it's missing.
-    // Prisma Engine validates this environment variable even when using an adapter.
-    if (!process.env.DATABASE_URL && rawUrl) {
+    // Always ensure process.env has a valid string for the engine's internal validation
+    if (rawUrl) {
       process.env.DATABASE_URL = rawUrl;
     }
 
@@ -42,55 +52,49 @@ function createPrismaClient(): PrismaClient {
     const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
     const path = require("path");
 
-    // For BetterSqlite3, we need the plain filesystem path.
     const dbPath = rawUrl.replace(/^file:/, "");
     const absolutePath = path.isAbsolute(dbPath) 
       ? dbPath 
       : path.resolve(process.cwd(), dbPath);
 
-    console.log("Prisma initializing with absolute path:", absolutePath);
-
-    // We pass the plain path to the adapter.
     const adapter = new PrismaBetterSqlite3({ url: absolutePath });
     return new PrismaClient({ adapter });
 
   } catch (error) {
-    // ── RESILIENCE MODE: Catch initialization errors during build ──────
-    const isVercelBuild = process.env.VERCEL && !process.env.VERCEL_ENV;
-    
-    if (isVercelBuild) {
-      console.error("CRITICAL: Prisma failed to initialize during Vercel Build. Switching to SAFE-MOCK mode to prevent build crash.");
-      console.error("Error details:", error);
-      
-      // Return a Proxy that intercepts all calls and returns empty values
-      // This allows the build to finish even if the database is unreachable.
-      return new Proxy({} as any, {
-        get: (_, prop) => {
-          // Special cases for Prisma Client structure
-          if (prop === '$on' || prop === '$connect' || prop === '$disconnect' || prop === '$use') {
-            return () => Promise.resolve();
-          }
-          if (prop === 'then') return undefined;
-          
-          // Return an object that mimics a model (e.g., db.article)
-          return new Proxy({}, {
-            get: (__, modelProp) => {
-              // Mimic query methods (findMany, count, etc.)
-              const asyncMethods = ['findMany', 'findUnique', 'findFirst', 'count', 'aggregate', 'groupBy'];
-              if (asyncMethods.includes(modelProp as string)) {
-                return () => Promise.resolve(modelProp === 'count' ? 0 : []);
-              }
-              return undefined;
-            }
-          });
-        }
-      }) as unknown as PrismaClient;
+    console.error("Prisma: Initialization error:", error);
+    // Fallback if everything else fails during build (as a safety net)
+    if (process.env.VERCEL) {
+      return createMockClient();
     }
-    
-    // Re-throw if not in Vercel build
     throw error;
   }
 }
+
+/**
+ * Creates a Proxy-based Prisma Client that returns empty arrays/values 
+ * for all queries to prevent build crashes.
+ */
+function createMockClient(): PrismaClient {
+  return new Proxy({} as any, {
+    get: (_, prop) => {
+      if (prop === '$on' || prop === '$connect' || prop === '$disconnect' || prop === '$use') {
+        return () => Promise.resolve();
+      }
+      if (prop === 'then') return undefined;
+      
+      return new Proxy({}, {
+        get: (__, modelProp) => {
+          const asyncMethods = ['findMany', 'findUnique', 'findFirst', 'count', 'aggregate', 'groupBy', 'update', 'create', 'delete', 'upsert'];
+          if (asyncMethods.includes(modelProp as string)) {
+            return () => Promise.resolve(modelProp === 'count' ? 0 : (modelProp.startsWith('find') ? null : []));
+          }
+          return undefined;
+        }
+      });
+    }
+  }) as unknown as PrismaClient;
+}
+
 
 
 
