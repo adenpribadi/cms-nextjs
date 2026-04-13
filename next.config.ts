@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     "@prisma/adapter-better-sqlite3",
     "@libsql/client",
     "@prisma/adapter-libsql",
+    "bcryptjs",
   ],
 };
 
