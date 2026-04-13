@@ -86,7 +86,7 @@ function createMockClient(): PrismaClient {
         get: (__, modelProp) => {
           const asyncMethods = ['findMany', 'findUnique', 'findFirst', 'count', 'aggregate', 'groupBy', 'update', 'create', 'delete', 'upsert'];
           if (asyncMethods.includes(modelProp as string)) {
-            return () => Promise.resolve(modelProp === 'count' ? 0 : (modelProp.startsWith('find') ? null : []));
+            return () => Promise.resolve(modelProp === 'count' ? 0 : (typeof modelProp === 'string' && modelProp.startsWith('find') ? null : []));
           }
           return undefined;
         }
